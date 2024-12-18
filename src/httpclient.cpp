@@ -1,55 +1,86 @@
-   #include "httpclient.h"
-   #include <curl/curl.h>
-   #include <iostream>
-   #include <string>
+#include "httpclient.h"
+#include <iostream>
+#include <curl/curl.h>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 
-  size_t writeCallback(void* contents, size_t size, size_t nmemb, std::string* output) {
-       size_t totalSize = size * nmemb;
-       output->append((char*)contents, totalSize);
-       return totalSize;
-  }
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* response) {
+    size_t totalSize = size * nmemb;
+    response->append((char*)contents, totalSize);
+    return totalSize;
+}
 
-   std::string httpPostRequest(const std::string& url, const std::string& authHeader, const std::string& jsonData) {
-       CURL* curl;
-       CURLcode res;
-       std::string response;
+std::string httpPostRequest(const std::string& url, const std::string& authHeader, const std::string& jsonData) {
+    CURL* curl;
+    CURLcode res;
+    std::string response;
 
-       curl = curl_easy_init();
-       if (curl) {
-           // Set URL
-           curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_global_init(CURL_GLOBAL_DEFAULT);
 
-          // Set Request type to POST
-           curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl = curl_easy_init();
+    if (!curl) {
+        std::cerr << "Could not initialize curl" << std::endl;
+        curl_global_cleanup();
+        return "ERROR";
+    }
 
-           //set post data
-           curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData.c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
 
-           // Set Authentication Header
-           struct curl_slist* headers = nullptr;
-           headers = curl_slist_append(headers, ("Authorization: " + authHeader).c_str());
-           headers = curl_slist_append(headers, "Content-Type: application/json");
-           curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-            // Capture response
-           curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-           curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-
-
-           // Perform the request
-           res = curl_easy_perform(curl);
-          
-           if (res != CURLE_OK) {
-               std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
-               response = "ERROR";
-           }
-
-
-            curl_slist_free_all(headers);
+    // Headers
+    struct curl_slist* headers = nullptr;
+     if(url.find("public") == std::string::npos) {
+      headers = curl_slist_append(headers, "Content-Type: application/json");
+      if (!headers) {
+       std::cerr << "Could not append Content-Type header" << std::endl;
+       curl_easy_cleanup(curl);
+       curl_global_cleanup();
+      return "ERROR";
+      }
+      headers = curl_slist_append(headers, ("Authorization: " + authHeader).c_str());
+       if (!headers) {
+          std::cerr << "Could not append Authorization header" << std::endl;
            curl_easy_cleanup(curl);
-       } else {
-           std::cerr << "curl_easy_init() failed" << std::endl;
-             response = "ERROR";
+          curl_global_cleanup();
+        return "ERROR";
        }
-       return response;
-   }
+      curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+     }
+     else {
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+          if (!headers) {
+            std::cerr << "Could not append Content-Type header" << std::endl;
+             curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return "ERROR";
+             }
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+     }
+
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData.c_str());
+
+    // Set a timeout
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+
+    res = curl_easy_perform(curl);
+
+    if (res != CURLE_OK) {
+        std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+        curl_global_cleanup();
+
+        return "ERROR";
+    }
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    curl_global_cleanup();
+    return response;
+}
