@@ -49,4 +49,4 @@
      // Build the authentication header
      std::string authHeader = "deribit-v2 " + apiKey + ":" + hex_ss.str();
      return authHeader;
- }
+ } 
